@@ -1,0 +1,89 @@
+Joshua Owen
+005004114
+Mark Vosinkel
+082004310
+
+Joshua Owen
+005004114
+Mark Vosinkel
+082004310
+
+When the client is run, it checks to see how much of the file has 
+previously been downloaded.  It checks this by hashing the chunks 
+of the file, and comparing this with the hashes stored in the 
+torrent.  We keep track of the chunks that we have not downloaded, 
+and if we have it completely downloaded, we notify the tracker and 
+become a seeder.  If we have the file completely downloaded at the 
+start, we run as a seeder, and dont start any download threads.  
+Our program is structured as a main process, which accepts commands 
+from the command line, a DownloadTracker, an UploadTracker, 
+multiple Downloader threads, multiple Uploader threads, and a 
+TrackerUpdate thread.  When we set up our ServerSocket, we were 
+careful to check that the port wasn't taken, and if it was to pick 
+another port in the allocated range.
+
+The DownloadTracker and UploadTracker handle the creation of download 
+threads and upload threads asynchronously.  This allows easy control 
+of all of the threads as well as allows us to block on the 
+ServerSocket waiting for requests.
+
+The Downloader runs and sends a handshake to the peer it as been 
+assigned by the DownloadTracker, it then recieves a bitfield, parses 
+it, waits for an unchoke, and sends requests for pieces of the file.  
+When these are returned, we keep them in a byte array, until the entire 
+chunk is downloaded.  This chunk is hashed using SHA-1 and compared with 
+the chunk's hash in the torrent file, and if it matches, it is written 
+to the file at its offset.  Then the downlaoder sends a have message to 
+all peers currently connected to the program.  When the file is completely 
+downloaded, the threads are killed, and removed from the thread list, 
+allowing another thread to be run.  We also send a completed message to 
+the tracker when the file is finished.  We implemented a random start 
+chunk, to follow the bittorrent specification of finding the least common 
+chunk.  For every piece we download, we increment the total bytes 
+downloaded, to keep the tracker up to date.
+
+The Uploader waits for a handshake, sends one back, and sends its bitfield.  
+It then listens for a request message, which will cause it to respond with 
+the piece, or a cancel message, which will cause it to end the connection.  
+We keep track of the total bytes uploaded every time we send a piece 
+message, for the tracker's updates.
+
+The Downloader and Uploader threads have 3 child threads, a KeepAlive, a 
+Listener, and a Sender.  We keep a message queue and wait on this to ensure 
+minimal CPU utilization. This was a big part of our project since we used so 
+many threads, we were careful to keep them waiting by using an object as a 
+semaphore, rather than staying in a continuous while loop.  We were able to 
+run our file with it using under 1% of our CPU, and very little memory.  We 
+used as little memory as possible by not keeping the file in memory unless 
+it was necessary, such as the piece downloading.
+
+The only complaints we had with this problem was the undocumented features 
+of the tracker, and the lack of good documentation on the bittorrent protocol.  
+The tracker would not add us as a peer, unless we responded to a malformed 
+handshake that it would send us.  It was significantly shorter than a normal 
+handshake response, presumably because it did not contain a peerID, but it 
+had to be responded to to be listed as a peer.  The other problem was the lack 
+of documentation on the specifications.  The wiki.theory.org site had very 
+little useful information, and it seemed like a lot of the project was just 
+trial and error with a working client.  Unfortunetly these working clients 
+were difficult to find in the second part of the project.  When people would 
+get connected to the tracker, and finally listed as peers, if their client 
+died, it would keep them on the tracker, and return them as a peer.  Too 
+often we were connecting to a dead client, trying to download the given torrent.
+We eventaully created our own torrent to download and upload since we were the 
+only clients using it.  Towards the end of the project, it felt like we were
+spending more time helping everyone else figure out the problems we'd already
+fixed than working on our own project, due to the tracker sending a handshake to
+the client to verify it being a peer.  There was no documentation that on the
+web.  If you use this project again, I would have found it useful to have 
+trackers, so eliminate some of the dead nodes, or at least a much shorter
+timeout for peers in the tracker.  It currently says there are 542 completed 
+peers, and I know these aren't all currently running.  I appologize if this 
+seems too critical, however they are just the parts of the project that 
+frustrated me the most.
+
+We have tested downloading from other clients, and uploading to our own.  The 
+commands we accept at the command prompt are:
+stop		suspends threads, sends tracker stopped message
+resume		resumes threads, sends tracker started message
+exit		exits program, sends tracker stopped message
